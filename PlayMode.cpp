@@ -36,12 +36,18 @@ Load< Scene > duck_scene(LoadTagDefault, []() -> Scene const * {
 	});
 });
 
+std::default_random_engine gen;
+std::uniform_real_distribution<float> distribution(0, 1);
+
 PlayMode::PlayMode() : scene(*duck_scene) {
+	int sphere_ctr = 0;
 	for (auto& transform : scene.transforms) {
 		if (transform.name == "Head") {
 			head = &transform;
 		} else if (transform.name == "Duck") {
 			duck = &transform;
+		} else if (transform.name.substr(0, 9) == "Icosphere") {
+			spheres[sphere_ctr++] = &transform;
 		}
 	}
 	if (head == nullptr) {
@@ -50,7 +56,26 @@ PlayMode::PlayMode() : scene(*duck_scene) {
 	if (duck == nullptr) {
 		throw std::runtime_error("Duck not found.");
 	}
+	for (int i = 0; i < NUM_SPHERES; i++) {
+		if (spheres[i] == nullptr) {
+			throw std::runtime_error("Sphere " + std::to_string(i) + " not found.");
+		}
+	}
+
+	// Initialize initial sphere locations
+	{
+		float cur = -30;
+		for (int i = 0; i < NUM_SPHERES; i++) {
+			float scale = distribution(gen) * 0.7f + 0.3f;
+			float pos = -20.f + distribution(gen) * 40.f;
+			spheres[i]->scale *= glm::vec3(scale, scale, scale);
+			spheres[i]->position = glm::vec3(cur, pos, 0);
+			cur -= 30;
+		}
+	}
+
 	head_base_rotation = head->rotation;
+	duck_initial_position = duck->position;
 
 	if (scene.cameras.size() != 1) throw std::runtime_error("Expecting scene to have exactly one camera, but it has " + std::to_string(scene.cameras.size()));
 	camera = &scene.cameras.front();
@@ -60,19 +85,21 @@ PlayMode::~PlayMode() {
 }
 
 bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
-
 	if (evt.type == SDL_KEYDOWN) {
 		if (evt.key.keysym.sym == SDLK_ESCAPE) {
 			SDL_SetRelativeMouseMode(SDL_FALSE);
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_LEFT) {
-			left.downs += 1;
 			left.pressed = true;
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_RIGHT) {
-			right.downs += 1;
 			right.pressed = true;
 			return true;
+		} else if (evt.key.keysym.sym == SDLK_r) {
+			r.pressed = true;
+			return true;
+		} else if (evt.key.keysym.sym == SDLK_SPACE) {
+			space.pressed = true;
 		}
 	} else if (evt.type == SDL_KEYUP) {
 		if (evt.key.keysym.sym == SDLK_LEFT) {
@@ -81,10 +108,11 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 		} else if (evt.key.keysym.sym == SDLK_RIGHT) {
 			right.pressed = false;
 			return true;
-		}
-	} else if (evt.type == SDL_MOUSEBUTTONDOWN) {
-		if (SDL_GetRelativeMouseMode() == SDL_FALSE) {
-			SDL_SetRelativeMouseMode(SDL_TRUE);
+		} else if (evt.key.keysym.sym == SDLK_r) {
+			r.pressed = false;
+			return true;
+		} else if (evt.key.keysym.sym == SDLK_SPACE) {
+			space.pressed = false;
 			return true;
 		}
 	}
@@ -93,6 +121,28 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 }
 
 void PlayMode::update(float elapsed) {
+	if (game_over) {
+		if (r.pressed) {
+			game_over = false;
+
+			// Reset duck position
+			duck->position = duck_initial_position;
+
+			// Initialize initial sphere locations
+			{
+				float cur = -30;
+				for (int i = 0; i < NUM_SPHERES; i++) {
+					float scale = distribution(gen) * 0.7f + 0.3f;
+					float pos = -20.f + distribution(gen) * 40.f;
+					spheres[i]->scale *= glm::vec3(scale, scale, scale);
+					spheres[i]->position = glm::vec3(cur, pos, 0);
+					cur -= 30;
+				}
+			}
+		}
+		return;
+	}
+
 	// wobble from starter code used to raise up/down duck's head
 	wobble += elapsed / 6.f;
 	wobble -= std::floor(wobble);
@@ -102,16 +152,18 @@ void PlayMode::update(float elapsed) {
 	);
 
 	float head_rot = elapsed * 500;
-	float move_speed = elapsed * 10;
+	float strafe = space.pressed ? elapsed * 30 : elapsed * 10;
 	if (left.pressed) {
 		head_degrees += head_rot;
 		head_degrees = std::min(head_degrees, 50.f);
-		duck->position -= glm::vec3(0.f, move_speed, 0.f);
+		strafe = std::min(strafe, duck->position.y + 18);
+		duck->position -= glm::vec3(0.f, strafe, 0.f);
 	}
 	if (right.pressed) {
 		head_degrees -= head_rot;
 		head_degrees = std::max(head_degrees, -50.f);
-		duck->position += glm::vec3(0.f, move_speed, 0.f);
+		strafe = std::min(strafe, 19.5f - duck->position.y);
+		duck->position += glm::vec3(0.f, strafe, 0.f);
 	}
 	if (!left.pressed && !right.pressed) {
 		if (head_degrees > 0) {
@@ -125,11 +177,30 @@ void PlayMode::update(float elapsed) {
 		glm::vec3(0.0f, 0.0f, 1.0f)
 	);
 
-	//reset button press counters:
-	left.downs = 0;
-	right.downs = 0;
-	up.downs = 0;
-	down.downs = 0;
+	//Move obstacles closer
+	{
+		float forward_amt = elapsed * 50;
+		for (int i = 0; i < NUM_SPHERES; i++) {
+			spheres[i]->position += glm::vec3(forward_amt, 0.f, 0.f);
+			if (spheres[i]->position.x > 30) {
+				spheres[i]->position.x -= NUM_SPHERES * 30;
+				spheres[i]->position.y = -20.f + distribution(gen) * 40.f;
+			}
+		}
+	}
+
+	//Check for collisions
+	{
+		float closest = 999999;
+		for (int i = 0; i < NUM_SPHERES; i++) {
+			float val = glm::distance(spheres[i]->position, duck->position) - spheres[i]->scale.x;
+			closest = std::min(closest, val);
+		}
+		if (closest < 1) {
+			std::cout << "GAME OVER!" << std::endl;
+			game_over = true;
+		}
+	}
 }
 
 void PlayMode::draw(glm::uvec2 const &drawable_size) {
@@ -155,7 +226,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 	scene.draw(*camera);
 
-	{ //use DrawLines to overlay some text:
+	if (game_over) {
 		glDisable(GL_DEPTH_TEST);
 		float aspect = float(drawable_size.x) / float(drawable_size.y);
 		DrawLines lines(glm::mat4(
@@ -166,13 +237,13 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		));
 
 		constexpr float H = 0.09f;
-		lines.draw_text("Mouse motion rotates camera; WASD moves; escape ungrabs mouse",
-			glm::vec3(-aspect + 0.1f * H, -1.0 + 0.1f * H, 0.0),
+		lines.draw_text("Game Over! Press R to restart.",
+			glm::vec3(-aspect + 0.2 * H, -0.5f + 0.1f * H, 0.0),
 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 			glm::u8vec4(0x00, 0x00, 0x00, 0x00));
 		float ofs = 2.0f / drawable_size.y;
-		lines.draw_text("Mouse motion rotates camera; WASD moves; escape ungrabs mouse",
-			glm::vec3(-aspect + 0.1f * H + ofs, -1.0 + + 0.1f * H + ofs, 0.0),
+		lines.draw_text("Game Over! Press R to restart.",
+			glm::vec3(-aspect + 0.2 * H + ofs, -0.5f + 0.1f * H + ofs, 0.0),
 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 			glm::u8vec4(0xff, 0xff, 0xff, 0x00));
 	}

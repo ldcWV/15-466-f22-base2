@@ -20,19 +20,27 @@ struct PlayMode : Mode {
 
 	//input tracking:
 	struct Button {
-		uint8_t downs = 0;
 		uint8_t pressed = 0;
-	} left, right, down, up;
+	} left, right, r, space;
 
 	//local copy of the game scene (so code can change it during gameplay):
 	Scene scene;
 
-	Scene::Transform *duck = nullptr;
-	Scene::Transform *head = nullptr;
+	// Duck transforms
+	Scene::Transform* duck = nullptr;
+	glm::vec3 duck_initial_position;
+	Scene::Transform* head = nullptr;
 	glm::quat head_base_rotation;
 	float wobble = 0.f;
 	float head_degrees = 0.f;
 	
+	// Sphere transforms
+	static constexpr int NUM_SPHERES = 39;
+	Scene::Transform* spheres[NUM_SPHERES];
+
+	// Game over flag
+	bool game_over = false;
+
 	//camera:
 	Scene::Camera *camera = nullptr;
 
