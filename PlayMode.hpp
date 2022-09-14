@@ -27,14 +27,11 @@ struct PlayMode : Mode {
 	//local copy of the game scene (so code can change it during gameplay):
 	Scene scene;
 
-	//hexapod leg to wobble:
-	Scene::Transform *hip = nullptr;
-	Scene::Transform *upper_leg = nullptr;
-	Scene::Transform *lower_leg = nullptr;
-	glm::quat hip_base_rotation;
-	glm::quat upper_leg_base_rotation;
-	glm::quat lower_leg_base_rotation;
-	float wobble = 0.0f;
+	Scene::Transform *duck = nullptr;
+	Scene::Transform *head = nullptr;
+	glm::quat head_base_rotation;
+	float wobble = 0.f;
+	float head_degrees = 0.f;
 	
 	//camera:
 	Scene::Camera *camera = nullptr;

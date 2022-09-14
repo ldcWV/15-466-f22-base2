@@ -12,23 +12,23 @@
 
 #include <random>
 
-GLuint hexapod_meshes_for_lit_color_texture_program = 0;
-Load< MeshBuffer > hexapod_meshes(LoadTagDefault, []() -> MeshBuffer const * {
+GLuint duck_meshes_for_lit_color_texture_program = 0;
+Load< MeshBuffer > duck_meshes(LoadTagDefault, []() -> MeshBuffer const * {
 	MeshBuffer const *ret = new MeshBuffer(data_path("duck.pnct"));
-	hexapod_meshes_for_lit_color_texture_program = ret->make_vao_for_program(lit_color_texture_program->program);
+	duck_meshes_for_lit_color_texture_program = ret->make_vao_for_program(lit_color_texture_program->program);
 	return ret;
 });
 
-Load< Scene > hexapod_scene(LoadTagDefault, []() -> Scene const * {
+Load< Scene > duck_scene(LoadTagDefault, []() -> Scene const * {
 	return new Scene(data_path("duck.scene"), [&](Scene &scene, Scene::Transform *transform, std::string const &mesh_name){
-		Mesh const &mesh = hexapod_meshes->lookup(mesh_name);
+		Mesh const &mesh = duck_meshes->lookup(mesh_name);
 
 		scene.drawables.emplace_back(transform);
 		Scene::Drawable &drawable = scene.drawables.back();
 
 		drawable.pipeline = lit_color_texture_program_pipeline;
 
-		drawable.pipeline.vao = hexapod_meshes_for_lit_color_texture_program;
+		drawable.pipeline.vao = duck_meshes_for_lit_color_texture_program;
 		drawable.pipeline.type = mesh.type;
 		drawable.pipeline.start = mesh.start;
 		drawable.pipeline.count = mesh.count;
@@ -36,7 +36,22 @@ Load< Scene > hexapod_scene(LoadTagDefault, []() -> Scene const * {
 	});
 });
 
-PlayMode::PlayMode() : scene(*hexapod_scene) {
+PlayMode::PlayMode() : scene(*duck_scene) {
+	for (auto& transform : scene.transforms) {
+		if (transform.name == "Head") {
+			head = &transform;
+		} else if (transform.name == "Duck") {
+			duck = &transform;
+		}
+	}
+	if (head == nullptr) {
+		throw std::runtime_error("Head not found.");
+	}
+	if (duck == nullptr) {
+		throw std::runtime_error("Duck not found.");
+	}
+	head_base_rotation = head->rotation;
+
 	if (scene.cameras.size() != 1) throw std::runtime_error("Expecting scene to have exactly one camera, but it has " + std::to_string(scene.cameras.size()));
 	camera = &scene.cameras.front();
 }
@@ -50,35 +65,21 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 		if (evt.key.keysym.sym == SDLK_ESCAPE) {
 			SDL_SetRelativeMouseMode(SDL_FALSE);
 			return true;
-		} else if (evt.key.keysym.sym == SDLK_a) {
+		} else if (evt.key.keysym.sym == SDLK_LEFT) {
 			left.downs += 1;
 			left.pressed = true;
 			return true;
-		} else if (evt.key.keysym.sym == SDLK_d) {
+		} else if (evt.key.keysym.sym == SDLK_RIGHT) {
 			right.downs += 1;
 			right.pressed = true;
 			return true;
-		} else if (evt.key.keysym.sym == SDLK_w) {
-			up.downs += 1;
-			up.pressed = true;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_s) {
-			down.downs += 1;
-			down.pressed = true;
-			return true;
 		}
 	} else if (evt.type == SDL_KEYUP) {
-		if (evt.key.keysym.sym == SDLK_a) {
+		if (evt.key.keysym.sym == SDLK_LEFT) {
 			left.pressed = false;
 			return true;
-		} else if (evt.key.keysym.sym == SDLK_d) {
+		} else if (evt.key.keysym.sym == SDLK_RIGHT) {
 			right.pressed = false;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_w) {
-			up.pressed = false;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_s) {
-			down.pressed = false;
 			return true;
 		}
 	} else if (evt.type == SDL_MOUSEBUTTONDOWN) {
@@ -92,6 +93,38 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 }
 
 void PlayMode::update(float elapsed) {
+	// wobble from starter code used to raise up/down duck's head
+	wobble += elapsed / 6.f;
+	wobble -= std::floor(wobble);
+	head->rotation = head_base_rotation * glm::angleAxis(
+		glm::radians(7 * std::sin(wobble * 2.0f * float(M_PI))),
+		glm::vec3(0.0f, 1.0f, 0.0f)
+	);
+
+	float head_rot = elapsed * 500;
+	float move_speed = elapsed * 10;
+	if (left.pressed) {
+		head_degrees += head_rot;
+		head_degrees = std::min(head_degrees, 50.f);
+		duck->position -= glm::vec3(0.f, move_speed, 0.f);
+	}
+	if (right.pressed) {
+		head_degrees -= head_rot;
+		head_degrees = std::max(head_degrees, -50.f);
+		duck->position += glm::vec3(0.f, move_speed, 0.f);
+	}
+	if (!left.pressed && !right.pressed) {
+		if (head_degrees > 0) {
+			head_degrees = std::max(0.f, head_degrees - head_rot);
+		} else {
+			head_degrees = std::min(0.f, head_degrees + head_rot);
+		}
+	}
+	head->rotation *= glm::angleAxis(
+		glm::radians(head_degrees),
+		glm::vec3(0.0f, 0.0f, 1.0f)
+	);
+
 	//reset button press counters:
 	left.downs = 0;
 	right.downs = 0;
