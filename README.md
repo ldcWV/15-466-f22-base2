@@ -6,7 +6,7 @@ Design: In this game, you are a duck getting pushed by the current of a river. Y
 
 Screen Shot:
 
-![Screen Shot](screenshot.png)
+![Screen Shot](screenshot2.png)
 
 How To Play:
 
